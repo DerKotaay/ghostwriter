@@ -573,6 +573,9 @@ fn register_tools(
     let no_draw = config.no_draw;
     let keyboard_clone = Arc::clone(&keyboard);
 
+    // Only offer draw_text when the keyboard is enabled. With --no-keyboard the model
+    // cannot fall back to typing over the user's handwriting.
+    if !config.no_keyboard {
     let tool_config_draw_text = load_config("tool_draw_text.json");
     engine.register_tool(
         "draw_text",
@@ -597,6 +600,8 @@ fn register_tools(
             }
         }),
     );
+
+    }
 
     // Register draw_svg tool
     if !config.no_svg {

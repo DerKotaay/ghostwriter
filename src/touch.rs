@@ -143,9 +143,31 @@ impl Touch {
         debug!("wait_for_real_trigger: entered");
         let mut position_x = 0;
         let mut position_y = 0;
+        // Require a fresh touch-down before a release can count as a trigger.
+        // Without this, a stale release left in the evdev buffer while we were
+        // busy processing immediately re-fires the next cycle (double-trigger).
+        let mut touch_started = false;
 
         if let Some(events) = event_stream {
             debug!("wait_for_real_trigger: event stream available, entering wait loop");
+
+            // Drain events that queued up during processing. Keep discarding until
+            // the stream has been quiet for 50ms, so we start from a clean slate.
+            let mut drained = 0usize;
+            loop {
+                match tokio::time::timeout(Duration::from_millis(50), events.next_event()).await {
+                    Ok(Ok(_)) => {
+                        drained += 1;
+                        if drained > 10000 {
+                            break;
+                        }
+                    }
+                    _ => break,
+                }
+            }
+            if drained > 0 {
+                debug!("wait_for_real_trigger: drained {} stale touch events", drained);
+            }
 
             loop {
                 debug!("wait_for_real_trigger: loop iteration starting");
@@ -172,16 +194,23 @@ impl Touch {
                                 if event.code() == ABS_MT_POSITION_Y {
                                     position_y = event.value();
                                 }
+                                if event.code() == ABS_MT_TRACKING_ID && event.value() >= 0 {
+                                    // A new finger came down; from here a release is genuine.
+                                    touch_started = true;
+                                }
                                 if event.code() == ABS_MT_TRACKING_ID && event.value() == -1 {
                                     let (x, y) = Self::input_to_virtual((position_x, position_y), device_model);
                                     debug!("Touch release detected at ({}, {}) normalized ({}, {})", position_x, position_y, x, y);
-                                    if Self::is_in_trigger_zone(x, y, trigger_corner) {
+                                    if !touch_started {
+                                        debug!("Touch release without a preceding press, ignoring (stale event)");
+                                    } else if Self::is_in_trigger_zone(x, y, trigger_corner) {
                                         debug!("Touch release in target zone!");
                                         debug!("wait_for_real_trigger: returning Ok()");
                                         return Ok(());
                                     } else {
                                         debug!("Touch release NOT in trigger zone, continuing");
                                     }
+                                    touch_started = false;
                                 }
                             }
                             Err(e) => {
