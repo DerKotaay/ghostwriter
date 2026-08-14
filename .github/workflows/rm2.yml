@@ -1,0 +1,39 @@
+name: RM2 Build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  rm2:
+    name: Build ghostwriter for reMarkable 2
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-unknown-linux-gnueabihf
+
+      # cross builds inside an older container image, so the binary does not
+      # depend on newer glibc symbols than the tablet actually has.
+      - name: Install cross
+        run: cargo install cross --locked
+
+      - name: Build
+        run: cross build --release --target armv7-unknown-linux-gnueabihf --bin ghostwriter
+
+      - name: Report binary details
+        run: |
+          BIN=target/armv7-unknown-linux-gnueabihf/release/ghostwriter
+          ls -la "$BIN"
+          echo "Highest GLIBC versions required:"
+          strings "$BIN" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -5
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghostwriter-rm2
+          path: target/armv7-unknown-linux-gnueabihf/release/ghostwriter
+          if-no-files-found: error

@@ -272,6 +272,9 @@ fn ghostwriter(args: &Args) -> Result<()> {
     let no_draw = config.no_draw;
     let keyboard_clone = Arc::clone(&keyboard);
 
+    // Only offer draw_text when the keyboard is enabled. With --no-keyboard the
+    // model cannot fall back to typing over the user's handwriting.
+    if !config.no_keyboard {
     let tool_config_draw_text = load_config("tool_draw_text.json");
 
     engine.register_tool(
@@ -298,6 +301,8 @@ fn ghostwriter(args: &Args) -> Result<()> {
             }
         }),
     );
+
+    }
 
     let output_file = config.output_file.clone();
     let save_bitmap = config.save_bitmap.clone();

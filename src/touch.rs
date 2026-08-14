@@ -75,6 +75,14 @@ impl Touch {
     pub fn wait_for_trigger(&mut self) -> Result<()> {
         let mut position_x = 0;
         let mut position_y = 0;
+        // A release only counts as a trigger if we saw the matching press during
+        // this wait, and not within a short settle window after we start waiting.
+        // Both guard against touch events that were buffered by the kernel while
+        // we were busy processing the previous request, which otherwise re-fire
+        // the next cycle immediately (one tap producing two answers).
+        let mut touch_started = false;
+        let entered = std::time::Instant::now();
+        let settle = std::time::Duration::from_millis(600);
         loop {
             // Store events in a temporary vector to avoid borrowing issues
             let mut events_to_process = Vec::new();
@@ -92,13 +100,21 @@ impl Touch {
                 if event.code() == ABS_MT_POSITION_Y {
                     position_y = event.value();
                 }
+                if event.code() == ABS_MT_TRACKING_ID && event.value() >= 0 {
+                    touch_started = true;
+                }
                 if event.code() == ABS_MT_TRACKING_ID && event.value() == -1 {
                     let (x, y) = self.input_to_virtual((position_x, position_y));
                     debug!("Touch release detected at ({}, {}) normalized ({}, {})", position_x, position_y, x, y);
-                    if self.is_in_trigger_zone(x, y) {
+                    if !touch_started {
+                        debug!("Touch release without a preceding press, ignoring (stale event)");
+                    } else if entered.elapsed() < settle {
+                        debug!("Touch release inside settle window, ignoring (stale event)");
+                    } else if self.is_in_trigger_zone(x, y) {
                         debug!("Touch release in target zone!");
                         return Ok(());
                     }
+                    touch_started = false;
                 }
             }
         }
