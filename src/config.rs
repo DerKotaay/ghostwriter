@@ -32,6 +32,8 @@ pub struct Config {
     pub thinking_tokens: u32,
     pub log_level: String,
     pub trigger_corner: String,
+    pub single_stroke: bool,
+    pub stroke_weight: u32,
 }
 
 impl Default for Config {
@@ -60,6 +62,8 @@ impl Default for Config {
             thinking_tokens: 5000,
             log_level: "info".to_string(),
             trigger_corner: "UR".to_string(),
+            single_stroke: false,
+            stroke_weight: 2,
         }
     }
 }

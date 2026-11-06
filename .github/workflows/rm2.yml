@@ -16,6 +16,9 @@ jobs:
         with:
           targets: armv7-unknown-linux-gnueabihf
 
+      - name: Test single-stroke text
+        run: cargo test --manifest-path hershey-check/Cargo.toml
+
       # cross builds inside an older container image, so the binary does not
       # depend on newer glibc symbols than the tablet actually has.
       - name: Install cross

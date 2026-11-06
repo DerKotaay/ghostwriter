@@ -13,6 +13,7 @@ use std::time::Duration;
 use ghostwriter::{
     config::Config,
     embedded_assets::load_config,
+    hershey,
     keyboard::Keyboard,
     llm_engine::{anthropic::Anthropic, google::Google, openai::OpenAI, LLMEngine},
     pen::Pen,
@@ -129,6 +130,14 @@ pub struct Args {
     #[arg(long, default_value = "UR")]
     trigger_corner: String,
 
+    /// Draw SVG text as single pen paths instead of rasterizing it
+    #[arg(long)]
+    single_stroke: bool,
+
+    /// Pen passes per single-stroke path; more passes draw darker text
+    #[arg(long, default_value = "2")]
+    stroke_weight: u32,
+
     /// Save current configuration to ~/.ghostwriter.toml and exit
     #[arg(long)]
     save_config: bool,
@@ -170,10 +179,19 @@ fn draw_text(text: &str, keyboard: &mut Keyboard) -> Result<()> {
     Ok(())
 }
 
-fn draw_svg(svg_data: &str, keyboard: &mut Keyboard, pen: &mut Pen, save_bitmap: Option<&String>, no_draw: bool) -> Result<()> {
+fn draw_svg(svg_data: &str, keyboard: &mut Keyboard, pen: &mut Pen, save_bitmap: Option<&String>, no_draw: bool, stroke_weight: Option<u32>) -> Result<()> {
     info!("Drawing SVG to the screen.");
     keyboard.progress_end()?;
-    let bitmap = svg_to_bitmap(svg_data, VIRTUAL_WIDTH, VIRTUAL_HEIGHT)?;
+    let svg_data = hershey::repair_svg(svg_data);
+    if let (Some(weight), Some(lines)) = (stroke_weight, hershey::parse_text_lines(&svg_data)) {
+        if !no_draw {
+            for path in hershey::pen_paths(&lines) {
+                pen.draw_stroke(&path, weight)?;
+            }
+        }
+        return Ok(());
+    }
+    let bitmap = svg_to_bitmap(&svg_data, VIRTUAL_WIDTH, VIRTUAL_HEIGHT)?;
     if let Some(save_bitmap) = save_bitmap {
         write_bitmap_to_file(&bitmap, save_bitmap)?;
     }
@@ -309,6 +327,7 @@ fn ghostwriter(args: &Args) -> Result<()> {
     let no_draw = config.no_draw;
     let keyboard_clone = Arc::clone(&keyboard);
     let pen_clone = Arc::clone(&pen);
+    let stroke_weight = config.single_stroke.then_some(config.stroke_weight.max(1));
 
     if !config.no_svg {
         let tool_config_draw_svg = load_config("tool_draw_svg.json");
@@ -330,7 +349,7 @@ fn ghostwriter(args: &Args) -> Result<()> {
                 }
                 let mut keyboard = lock!(keyboard_clone);
                 let mut pen = lock!(pen_clone);
-                if let Err(e) = draw_svg(svg_data, &mut keyboard, &mut pen, save_bitmap.as_ref(), no_draw) {
+                if let Err(e) = draw_svg(svg_data, &mut keyboard, &mut pen, save_bitmap.as_ref(), no_draw, stroke_weight) {
                     log::error!("Failed to draw SVG: {}", e);
                 }
             }),

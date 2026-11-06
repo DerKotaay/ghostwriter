@@ -10,6 +10,8 @@ use crate::device::DeviceModel;
 // Output dimensions remain the same for both devices
 const VIRTUAL_WIDTH: u32 = 768;
 const VIRTUAL_HEIGHT: u32 = 1024;
+const STROKE_PASS_OFFSET: f32 = 0.8;
+const STROKE_STEP: f32 = 1.5;
 
 pub struct Pen {
     device: Option<Device>,
@@ -75,6 +77,9 @@ impl Pen {
     pub fn draw_bitmap(&mut self, bitmap: &[Vec<bool>]) -> Result<()> {
         let mut is_pen_down = false;
         for (y, row) in bitmap.iter().enumerate() {
+            if !row.iter().any(|&pixel| pixel) {
+                continue;
+            }
             for (x, &pixel) in row.iter().enumerate() {
                 if pixel {
                     if !is_pen_down {
@@ -95,6 +100,35 @@ impl Pen {
             is_pen_down = false;
             sleep(Duration::from_millis(5));
         }
+        Ok(())
+    }
+
+    /// Traces one continuous path with the pen held down, offsetting each extra pass to thicken it.
+    pub fn draw_stroke(&mut self, path: &[(f32, f32)], passes: u32) -> Result<()> {
+        let Some(&start) = path.first() else {
+            return Ok(());
+        };
+        self.goto_xy_virtual_f(start)?;
+        self.pen_down()?;
+        sleep(Duration::from_millis(1));
+        let mut previous = start;
+        for pass in 0..passes {
+            let offset = pass as f32 * STROKE_PASS_OFFSET;
+            let forward = pass % 2 == 0;
+            let points: Vec<(f32, f32)> = if forward { path.to_vec() } else { path.iter().rev().copied().collect() };
+            for (x, y) in points {
+                let target = (x + offset, y);
+                let distance = ((target.0 - previous.0).powi(2) + (target.1 - previous.1).powi(2)).sqrt();
+                let steps = (distance / STROKE_STEP).ceil().max(1.0) as i32;
+                for step in 1..=steps {
+                    let t = step as f32 / steps as f32;
+                    self.goto_xy_virtual_f((previous.0 + (target.0 - previous.0) * t, previous.1 + (target.1 - previous.1) * t))?;
+                }
+                previous = target;
+            }
+        }
+        self.pen_up()?;
+        sleep(Duration::from_millis(1));
         Ok(())
     }
 
@@ -146,6 +180,10 @@ impl Pen {
         self.goto_xy(self.virtual_to_input(point))
     }
 
+    fn goto_xy_virtual_f(&mut self, point: (f32, f32)) -> Result<()> {
+        self.goto_xy(self.virtual_to_input_f(point))
+    }
+
     pub fn goto_xy(&mut self, (x, y): (i32, i32)) -> Result<()> {
         if let Some(device) = &mut self.device {
             device.send_events(&[
@@ -174,9 +212,13 @@ impl Pen {
     }
 
     fn virtual_to_input(&self, (x, y): (i32, i32)) -> (i32, i32) {
+        self.virtual_to_input_f((x as f32, y as f32))
+    }
+
+    fn virtual_to_input_f(&self, (x, y): (f32, f32)) -> (i32, i32) {
         // Swap and normalize the coordinates
-        let x_normalized = x as f32 / VIRTUAL_WIDTH as f32;
-        let y_normalized = y as f32 / VIRTUAL_HEIGHT as f32;
+        let x_normalized = x / VIRTUAL_WIDTH as f32;
+        let y_normalized = y / VIRTUAL_HEIGHT as f32;
 
         match self.device_model {
             DeviceModel::RemarkablePaperPro => {

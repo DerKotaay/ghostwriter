@@ -4,3 +4,5 @@
 .aider*
 
 **/.claude/settings.local.json
+/hershey-check/target
+/hershey-check/Cargo.lock

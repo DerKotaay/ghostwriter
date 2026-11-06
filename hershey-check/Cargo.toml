@@ -1,0 +1,9 @@
+[package]
+name = "hershey-check"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+roxmltree = "0.20"
+
+[workspace]

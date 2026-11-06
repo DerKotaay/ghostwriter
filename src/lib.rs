@@ -1,6 +1,7 @@
 pub mod config;
 pub mod device;
 pub mod embedded_assets;
+pub mod hershey;
 pub mod keyboard;
 pub mod llm_engine;
 pub mod pen;
