@@ -138,6 +138,10 @@ pub struct Args {
     #[arg(long, default_value = "2")]
     stroke_weight: u32,
 
+    /// Enable the show_terms tool, which writes its results to this file for the Terms app
+    #[arg(long)]
+    terms_file: Option<String>,
+
     /// Save current configuration to ~/.ghostwriter.toml and exit
     #[arg(long)]
     save_config: bool,
@@ -351,6 +355,21 @@ fn ghostwriter(args: &Args) -> Result<()> {
                 let mut pen = lock!(pen_clone);
                 if let Err(e) = draw_svg(svg_data, &mut keyboard, &mut pen, save_bitmap.as_ref(), no_draw, stroke_weight) {
                     log::error!("Failed to draw SVG: {}", e);
+                }
+            }),
+        );
+    }
+
+    if let Some(terms_file) = config.terms_file.clone() {
+        let tool_config_show_terms = load_config("tool_show_terms.json");
+        engine.register_tool(
+            "show_terms",
+            serde_json::from_str::<serde_json::Value>(tool_config_show_terms.as_str())?,
+            Box::new(move |arguments: json| {
+                let staging = format!("{}.tmp", terms_file);
+                let written = std::fs::write(&staging, arguments.to_string()).and_then(|_| std::fs::rename(&staging, &terms_file));
+                if let Err(e) = written {
+                    log::error!("Failed to write terms file: {}", e);
                 }
             }),
         );

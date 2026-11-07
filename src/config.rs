@@ -34,6 +34,7 @@ pub struct Config {
     pub trigger_corner: String,
     pub single_stroke: bool,
     pub stroke_weight: u32,
+    pub terms_file: Option<String>,
 }
 
 impl Default for Config {
@@ -64,6 +65,7 @@ impl Default for Config {
             trigger_corner: "UR".to_string(),
             single_stroke: false,
             stroke_weight: 2,
+            terms_file: None,
         }
     }
 }

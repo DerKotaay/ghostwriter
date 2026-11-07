@@ -1,0 +1,8 @@
+{
+    "name": "Terms",
+    "loadsBackend": false,
+    "entry": "/ui/terms.qml",
+    "id": "terms",
+    "supportsScaling": true,
+    "canHaveMultipleFrontends": false
+}

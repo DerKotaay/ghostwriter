@@ -5,6 +5,25 @@ on:
   workflow_dispatch:
 
 jobs:
+  terms-app:
+    name: Package the Terms app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile resources
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev-tools
+          mkdir -p output/terms
+          cd terms-app
+          /usr/lib/qt6/libexec/rcc --binary -o ../output/terms/resources.rcc application.qrc
+          cp manifest.json icon.png ../output/terms/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: terms-app
+          path: output/terms
+          if-no-files-found: error
+
   rm2:
     name: Build ghostwriter for reMarkable 2
     runs-on: ubuntu-latest
