@@ -50,6 +50,7 @@ pub struct Touch {
     device: Option<Device>,
     device_model: DeviceModel,
     trigger_corner: TriggerCorner,
+    pub terms_corner: bool,
 }
 
 impl Touch {
@@ -69,10 +70,12 @@ impl Touch {
             device,
             device_model,
             trigger_corner,
+            terms_corner: false,
         }
     }
 
-    pub fn wait_for_trigger(&mut self) -> Result<()> {
+    /// Waits for a corner tap. Returns true when it was the highlights corner.
+    pub fn wait_for_trigger(&mut self) -> Result<bool> {
         let mut position_x = 0;
         let mut position_y = 0;
         // A release only counts as a trigger if we saw the matching press during
@@ -112,7 +115,10 @@ impl Touch {
                         debug!("Touch release inside settle window, ignoring (stale event)");
                     } else if self.is_in_trigger_zone(x, y) {
                         debug!("Touch release in target zone!");
-                        return Ok(());
+                        return Ok(false);
+                    } else if self.terms_corner && x > VIRTUAL_WIDTH as i32 - 68 && y > VIRTUAL_HEIGHT as i32 - 68 {
+                        debug!("Touch release in the highlights corner!");
+                        return Ok(true);
                     }
                     touch_started = false;
                 }

@@ -13,7 +13,7 @@ use std::time::Duration;
 use ghostwriter::{
     config::Config,
     embedded_assets::load_config,
-    hershey,
+    hershey, highlights,
     keyboard::Keyboard,
     llm_engine::{anthropic::Anthropic, google::Google, openai::OpenAI, LLMEngine},
     pen::Pen,
@@ -24,6 +24,7 @@ use ghostwriter::{
 };
 
 // Output dimensions remain the same for both devices
+const XOCHITL_DIR: &str = "/home/root/.local/share/remarkable/xochitl";
 const VIRTUAL_WIDTH: u32 = 768;
 const VIRTUAL_HEIGHT: u32 = 1024;
 
@@ -205,6 +206,13 @@ fn draw_svg(svg_data: &str, keyboard: &mut Keyboard, pen: &mut Pen, save_bitmap:
     Ok(())
 }
 
+fn write_status(terms_file: &str, message: &str) {
+    let status = serde_json::json!({ "terms": [{ "term": message, "definition": "" }] });
+    if let Err(e) = std::fs::write(terms_file, status.to_string()) {
+        log::error!("Failed to write terms file: {}", e);
+    }
+}
+
 fn determine_engine_name(engine_arg: &Option<String>, model: &str) -> Result<String> {
     if let Some(engine) = engine_arg {
         return Ok(engine.clone());
@@ -332,6 +340,8 @@ fn ghostwriter(args: &Args) -> Result<()> {
     let keyboard_clone = Arc::clone(&keyboard);
     let pen_clone = Arc::clone(&pen);
     let stroke_weight = config.single_stroke.then_some(config.stroke_weight.max(1));
+    let terms_request = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let terms_request_for_draw = Arc::clone(&terms_request);
 
     if !config.no_svg {
         let tool_config_draw_svg = load_config("tool_draw_svg.json");
@@ -346,6 +356,10 @@ fn ghostwriter(args: &Args) -> Result<()> {
                         return;
                     }
                 };
+                if terms_request_for_draw.load(std::sync::atomic::Ordering::Relaxed) {
+                    log::warn!("Ignoring draw_svg during a highlights request");
+                    return;
+                }
                 if let Some(output_file) = &output_file {
                     if let Err(e) = std::fs::write(output_file, svg_data) {
                         log::error!("Failed to write output file: {}", e);
@@ -375,12 +389,15 @@ fn ghostwriter(args: &Args) -> Result<()> {
         );
     }
 
+    lock!(touch).terms_corner = config.terms_file.is_some();
+
     lock!(keyboard).progress("Tools initialized.")?;
     sleep(Duration::from_millis(1000));
     lock!(keyboard).progress_end()?;
     sleep(Duration::from_millis(1000));
 
     loop {
+        let mut wants_terms = false;
         if config.no_trigger {
             debug!("Skipping waiting for trigger");
         } else {
@@ -393,12 +410,30 @@ fn ghostwriter(args: &Args) -> Result<()> {
                     TriggerCorner::LowerLeft => "lower-left",
                 }
             );
-            lock!(touch).wait_for_trigger()?;
+            wants_terms = lock!(touch).wait_for_trigger()?;
         }
 
-        // Sleep a bit to differentiate the touches
-        sleep(Duration::from_millis(100));
-        lock!(touch).tap_middle_bottom()?;
+        let mut terms_prompt = None;
+        terms_request.store(wants_terms, std::sync::atomic::Ordering::Relaxed);
+        if wants_terms {
+            let terms_file = config.terms_file.as_deref().unwrap_or_default();
+            write_status(terms_file, "Reading your highlights...");
+            let found = highlights::wait_for_highlights(std::path::Path::new(XOCHITL_DIR), Duration::from_secs(20));
+            info!("Highlights found: {:?}", found);
+            if found.is_empty() {
+                write_status(terms_file, "No highlights found yet. Give it a few seconds, then tap again.");
+                continue;
+            }
+            write_status(terms_file, "Defining...");
+            terms_prompt = Some(format!(
+                "TERMS REQUEST. The user highlighted these on the page shown: {}. Call show_terms now with exactly these, each defined in 1-2 plain sentences that fit the page. Do not call draw_svg.",
+                found.join("; ")
+            ));
+        } else {
+            // Sleep a bit to differentiate the touches
+            sleep(Duration::from_millis(100));
+            lock!(touch).tap_middle_bottom()?;
+        }
         // sleep(Duration::from_millis(1000));
         // lock!(keyboard).progress("Taking screenshot...")?;
 
@@ -454,6 +489,9 @@ fn ghostwriter(args: &Args) -> Result<()> {
         }
 
         engine.add_text_content(prompt);
+        if let Some(terms_prompt) = &terms_prompt {
+            engine.add_text_content(terms_prompt);
+        }
 
         info!("Executing the engine (call out to {}", engine_name);
         lock!(keyboard).progress("thinking...")?;
