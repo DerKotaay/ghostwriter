@@ -61,7 +61,7 @@ Rectangle {
 
     ListView {
         anchors.top: parent.top
-        anchors.bottom: clearButton.top
+        anchors.bottom: buttons.top
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.margins: 20
@@ -88,26 +88,49 @@ Rectangle {
         }
     }
 
-    Rectangle {
-        id: clearButton
-        visible: cards.count > 0
-        height: visible ? 70 : 0
-        width: 180
+    Row {
+        id: buttons
+        height: 70
+        spacing: 16
         anchors.bottom: parent.bottom
         anchors.right: parent.right
         anchors.margins: 12
-        border.width: 2
-        border.color: "black"
 
-        Text {
-            anchors.centerIn: parent
-            font.pointSize: 14
-            text: "Clear"
+        Rectangle {
+            visible: cards.count > 0
+            width: 180
+            height: parent.height
+            border.width: 2
+            border.color: "black"
+
+            Text {
+                anchors.centerIn: parent
+                font.pointSize: 14
+                text: "Clear"
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: clearTerms()
+            }
         }
 
-        MouseArea {
-            anchors.fill: parent
-            onClicked: clearTerms()
+        Rectangle {
+            width: 180
+            height: parent.height
+            border.width: 2
+            border.color: "black"
+
+            Text {
+                anchors.centerIn: parent
+                font.pointSize: 14
+                text: "Close"
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.close()
+            }
         }
     }
 }
