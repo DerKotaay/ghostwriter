@@ -56,7 +56,7 @@ Rectangle {
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
         font.pointSize: 16
-        text: "Highlight words on the page, then tap the lower-left corner."
+        text: "Highlight words on the page, then tap the lower-right corner."
     }
 
     ListView {
