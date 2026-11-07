@@ -10,6 +10,10 @@ use base64::{engine::general_purpose, Engine as _};
 use image::ImageEncoder;
 
 use crate::device::DeviceModel;
+use crate::firmware;
+
+// Where the visible frame starts inside the mapping after /dev/fb0 on rM2 3.24+.
+const RM2_BGRA_OFFSET: u64 = 2_629_640;
 
 const VIRTUAL_WIDTH: u32 = 768;
 const VIRTUAL_HEIGHT: u32 = 1024;
@@ -17,16 +21,22 @@ const VIRTUAL_HEIGHT: u32 = 1024;
 pub struct Screenshot {
     data: Vec<u8>,
     device_model: DeviceModel,
+    rm2_bgra: bool,
 }
 
 impl Screenshot {
     pub fn new() -> Result<Screenshot> {
         let device_model = DeviceModel::detect();
         info!("Screen detected device: {}", device_model.name());
-        Ok(Screenshot { data: vec![], device_model })
+        let rm2_bgra = !matches!(device_model, DeviceModel::RemarkablePaperPro)
+            && firmware::rm2_uses_bgra(&std::fs::read_to_string("/etc/os-release").unwrap_or_default());
+        Ok(Screenshot { data: vec![], device_model, rm2_bgra })
     }
 
     fn screen_width(&self) -> u32 {
+        if self.rm2_bgra {
+            return 1404;
+        }
         match self.device_model {
             DeviceModel::Remarkable2 => 1872,
             DeviceModel::RemarkablePaperPro => 1632,
@@ -35,6 +45,9 @@ impl Screenshot {
     }
 
     fn screen_height(&self) -> u32 {
+        if self.rm2_bgra {
+            return 1872;
+        }
         match self.device_model {
             DeviceModel::Remarkable2 => 1404,
             DeviceModel::RemarkablePaperPro => 2154,
@@ -43,6 +56,9 @@ impl Screenshot {
     }
 
     pub fn bytes_per_pixel(&self) -> usize {
+        if self.rm2_bgra {
+            return 4;
+        }
         match self.device_model {
             DeviceModel::Remarkable2 => 2,
             DeviceModel::RemarkablePaperPro => 4,
@@ -102,7 +118,7 @@ impl Screenshot {
                     .output()?;
                 let address_hex = String::from_utf8(output.stdout)?.trim().to_string();
                 let address = u64::from_str_radix(&address_hex, 16)?;
-                Ok(address + 7)
+                Ok(address + if self.rm2_bgra { RM2_BGRA_OFFSET } else { 7 })
             }
         }
     }
@@ -188,7 +204,8 @@ impl Screenshot {
         // Resize the PNG to VIRTUAL_WIDTH x VIRTUAL_HEIGHT
         debug!("Resizing image to {}x{}", VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
         let img = image::load_from_memory(&png_data)?;
-        let resized_img = img.resize_exact(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, image::imageops::FilterType::Nearest);
+        let filter = if self.rm2_bgra { image::imageops::FilterType::Triangle } else { image::imageops::FilterType::Nearest };
+        let resized_img = img.resize_exact(VIRTUAL_WIDTH, VIRTUAL_HEIGHT, filter);
 
         // Encode the resized image back to PNG
         debug!("Re-encoding resized image");
@@ -231,6 +248,9 @@ impl Screenshot {
         }
     }
     fn encode_png_rm2(&self, raw_data: &[u8]) -> Result<Vec<u8>> {
+        if self.rm2_bgra {
+            return self.encode_png_rm2_bgra(raw_data);
+        }
         let raw_u8: Vec<u8> = raw_data.chunks_exact(2).map(|chunk| u8::from_le_bytes([chunk[1]])).collect();
         let width = self.screen_width();
         let height = self.screen_height();
@@ -253,6 +273,19 @@ impl Screenshot {
         let encoder = image::codecs::png::PngEncoder::new(&mut png_data);
         encoder.write_image(final_image.as_raw(), final_image.width(), final_image.height(), image::ExtendedColorType::L8)?;
 
+        Ok(png_data)
+    }
+
+    /// Upright BGRA frame; keeps full greyscale so highlights and pencil survive.
+    fn encode_png_rm2_bgra(&self, raw_data: &[u8]) -> Result<Vec<u8>> {
+        let luma: Vec<u8> = raw_data
+            .chunks_exact(4)
+            .map(|c| ((c[2] as u32 * 299 + c[1] as u32 * 587 + c[0] as u32 * 114) / 1000) as u8)
+            .collect();
+        let img = GrayImage::from_raw(1404, 1872, luma).ok_or_else(|| anyhow::anyhow!("Failed to create image from raw data"))?;
+        let mut png_data = Vec::new();
+        let encoder = image::codecs::png::PngEncoder::new(&mut png_data);
+        encoder.write_image(img.as_raw(), img.width(), img.height(), image::ExtendedColorType::L8)?;
         Ok(png_data)
     }
 

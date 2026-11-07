@@ -1,6 +1,7 @@
 pub mod config;
 pub mod device;
 pub mod embedded_assets;
+pub mod firmware;
 pub mod hershey;
 pub mod highlights;
 pub mod keyboard;
